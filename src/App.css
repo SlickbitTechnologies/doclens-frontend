@@ -1,0 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+* {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.6s ease-in-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.8s ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.document-upload-area {
+  transition: all 0.3s ease;
+}
+
+.document-upload-area:hover {
+  transform: translateY(-2px);
+}
+
+.export-button {
+  transition: all 0.2s ease;
+}
+
+.export-button:hover {
+  transform: translateY(-1px);
+}
+
+.comparison-container {
+  height: calc(100vh - 200px);
+}
+
+.document-viewer {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+}

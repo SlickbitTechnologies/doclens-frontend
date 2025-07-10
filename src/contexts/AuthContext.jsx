@@ -1,0 +1,1 @@
+// This file is no longer needed for static login. Remove all code.
