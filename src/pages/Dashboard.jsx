@@ -8,7 +8,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const navigate = useNavigate()
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    // If you have auth context or tokens, clear them here
+    // Example: localStorage.removeItem('token');
+    navigate('/login'); // Redirect to login screen
+  };
 
   // Refs for file inputs
   const sourceInputRef = useRef();
@@ -54,7 +60,7 @@ export default function Dashboard() {
 
       const data = await response.json();
       setShowUploadModal(false);
-      navigate('/comparison', { state: { comparisonResult: data } });
+      navigate('/comparison', { state: { comparisonResult: data, childFileName: childFile.name } });
     } catch (err) {
       setError('Failed to analyze documents: ' + err.message);
       // Do NOT call navigate here
@@ -74,7 +80,12 @@ export default function Dashboard() {
           <span className="text-gray-700 flex items-center">
             <span className="mr-2">👤</span>subbarao.qa7
           </span>
-          <button className="border border-teal-600 text-teal-700 px-4 py-1 rounded hover:bg-teal-50 font-semibold">Logout</button>
+          <button
+            className="border border-teal-600 text-teal-700 px-4 py-1 rounded hover:bg-teal-50 font-semibold"
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
         </div>
       </header>
 
