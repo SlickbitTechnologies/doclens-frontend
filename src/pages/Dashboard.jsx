@@ -44,7 +44,9 @@ export default function Dashboard() {
       formData.append('source', sourceFile);
       formData.append('child', childFile);
 
-      const response = await fetch('http://localhost:8000/compare', {
+      const response = await fetch('https://doclens.gentlecoast-1594acf8.centralus.azurecontainerapps.io/', {
+      // const response = await fetch('http://localhost:8000/compare', {
+
         method: 'POST',
         body: formData,
       });

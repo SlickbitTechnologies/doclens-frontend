@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { FaDownload } from 'react-icons/fa';
+import { jsPDF } from 'jspdf';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { saveAs } from 'file-saver';
+
 const ComparisonScreen = () => {
   const location = useLocation();
   const comparisonResult = location.state?.comparisonResult;
@@ -21,6 +26,13 @@ const ComparisonScreen = () => {
   const childSections = comparisonResult?.child_sections || [];
   const sectionComparisons = comparisonResult?.section_comparisons || [];
   const [activeTab, setActiveTab] = useState('section');
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showExportFormatModal, setShowExportFormatModal] = useState(false); // NEW
+  const [exportOptions, setExportOptions] = useState({
+    updatedDocuments: false,
+    overallSummary: true,
+    sectionWise: false,
+  });
 
   // Build maps for quick lookup
   const matchedByCdsTitle = Object.fromEntries(matchedPairs.map(pair => [pair.cds_title, pair.child_title]));
@@ -65,6 +77,71 @@ const ComparisonScreen = () => {
   const summaryOfChanges = sectionComparisons
     .filter(s => s.change_count > 0 && s.summary)
     .map(s => s.summary);
+
+  // Helper to build export content based on options
+  const buildExportContent = () => {
+    let content = '';
+    if (exportOptions.updatedDocuments) {
+      content += '--- Updated Documents ---\n';
+      cdsSections.forEach((sec, idx) => {
+        content += `CDS Section ${idx + 1}: ${sec.title}\n${sec.content}\n\n`;
+      });
+      childSections.forEach((sec, idx) => {
+        content += `${childType} Section ${idx + 1}: ${sec.title}\n${sec.content}\n\n`;
+      });
+    }
+    if (exportOptions.overallSummary) {
+      content += '\n--- Overall Summary ---\n';
+      content += `Total Differences: ${totalDifferences}\nSections Affected: ${sectionsAffected}\n`;
+      summaryOfChanges.forEach((summary, idx) => {
+        content += `Change ${idx + 1}: ${summary}\n`;
+      });
+    }
+    if (exportOptions.sectionWise) {
+      content += '\n--- Section-wise Differences ---\n';
+      sectionComparisons.forEach((s, idx) => {
+        if (s.change_count > 0) {
+          const sectionName = s.section && s.section.trim() ? s.section : `Section ${idx + 1}`;
+          content += `Section: ${sectionName}\nChanges: ${s.change_count}\nSummary: ${s.summary}\n\n`;
+        }
+      });
+    }
+    return content || 'No content selected for export.';
+  };
+
+  // PDF Export
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const content = buildExportContent();
+    const lines = doc.splitTextToSize(content, 180);
+    let y = 10;
+    lines.forEach(line => {
+      if (y > 280) {
+        doc.addPage();
+        y = 10;
+      }
+      doc.text(line, 10, y);
+      y += 8;
+    });
+    doc.save('comparison_export.pdf');
+  };
+
+  // Word Export
+  const handleExportWord = () => {
+    const content = buildExportContent();
+    const paragraphs = content.split('\n').map(line => new Paragraph(line));
+    const doc = new Document({
+      sections: [
+        {
+          properties: {},
+          children: paragraphs,
+        },
+      ],
+    });
+    Packer.toBlob(doc).then(blob => {
+      saveAs(blob, 'comparison_export.docx');
+    });
+  };
 
   return (
     <div className="min-h-screen bg-teal-50 p-0">
@@ -127,7 +204,12 @@ const ComparisonScreen = () => {
             >
               Overall
             </button>
-            <button className="px-3 py-1 rounded font-semibold border bg-white text-teal-700 border-teal-700" disabled>Export</button>
+            <button
+              className="px-3 py-1 rounded font-semibold border bg-white text-teal-700 border-teal-700"
+              onClick={() => setShowExportModal(true)}
+            >
+              Export
+            </button>
           </div>
           {/* Section-Wise Summary */}
           {activeTab === 'section' && (
@@ -188,6 +270,124 @@ const ComparisonScreen = () => {
           )}
         </div>
       </div>
+      {/* Export Options Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-0 relative">
+            <button
+              className="absolute top-5 right-6 text-gray-400 hover:text-gray-600 text-2xl font-bold focus:outline-none"
+              onClick={() => setShowExportModal(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <div className="px-8 pt-8 pb-2">
+              <div className="flex items-center gap-3 mb-6">
+                <FaDownload className="text-teal-600 text-2xl" />
+                <h2 className="text-2xl font-bold text-teal-700">Export Options</h2>
+              </div>
+              <div className="flex flex-col gap-4 mb-6">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={exportOptions.updatedDocuments}
+                    onChange={e => setExportOptions(opts => ({ ...opts, updatedDocuments: e.target.checked }))}
+                    className="form-checkbox h-5 w-5 text-teal-600 rounded-none mt-1 border-gray-300 focus:ring-2 focus:ring-teal-500"
+                  />
+                  <div>
+                    <span className="font-semibold text-gray-900">Updated Documents</span>
+                    <div className="text-gray-500 text-sm mt-0.5">Export the complete updated documents</div>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={exportOptions.overallSummary}
+                    onChange={e => setExportOptions(opts => ({ ...opts, overallSummary: e.target.checked }))}
+                    className="form-checkbox h-5 w-5 text-teal-600 rounded-none mt-1 border-gray-300 focus:ring-2 focus:ring-teal-500"
+                  />
+                  <div>
+                    <span className="font-semibold text-gray-900">Overall Summary</span>
+                    <div className="text-gray-500 text-sm mt-0.5">Export the overall comparison summary</div>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={exportOptions.sectionWise}
+                    onChange={e => setExportOptions(opts => ({ ...opts, sectionWise: e.target.checked }))}
+                    className="form-checkbox h-5 w-5 text-teal-600 rounded-none mt-1 border-gray-300 focus:ring-2 focus:ring-teal-500"
+                  />
+                  <div>
+                    <span className="font-semibold text-gray-900">Section-wise Differences</span>
+                    <div className="text-gray-500 text-sm mt-0.5">Export detailed section-wise differences</div>
+                  </div>
+                </label>
+              </div>
+              <div className="flex justify-end gap-3 mt-8 pb-2">
+                <button
+                  className="px-5 py-2 rounded font-semibold border bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                  onClick={() => setShowExportModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-5 py-2 rounded font-semibold bg-teal-700 text-white hover:bg-teal-800 flex items-center gap-2"
+                  onClick={() => {
+                    setShowExportModal(false);
+                    setShowExportFormatModal(true); // Open second modal
+                  }}
+                >
+                  <FaDownload className="text-white text-lg" /> Export
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Export Format Modal (Second Modal) */}
+      {showExportFormatModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-0 relative">
+            <button
+              className="absolute top-5 right-6 text-gray-400 hover:text-gray-600 text-2xl font-bold focus:outline-none"
+              onClick={() => setShowExportFormatModal(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <div className="px-8 pt-8 pb-2">
+              <h2 className="text-2xl font-bold text-teal-700 mb-6 flex items-center gap-2">
+                <FaDownload className="text-teal-600 text-2xl" /> Choose Export Format
+              </h2>
+              <div className="flex gap-6 mb-8 justify-center">
+                <button
+                  className="flex flex-col items-center border rounded-lg px-8 py-6 hover:bg-teal-50 focus:outline-none"
+                  onClick={() => { setShowExportFormatModal(false); handleExportPDF(); }}
+                >
+                  <span className="text-4xl mb-2">📄</span>
+                  <span className="font-semibold text-teal-700">PDF</span>
+                </button>
+                <button
+                  className="flex flex-col items-center border rounded-lg px-8 py-6 hover:bg-teal-50 focus:outline-none"
+                  onClick={() => { setShowExportFormatModal(false); handleExportWord(); }}
+                >
+                  <span className="text-4xl mb-2">📝</span>
+                  <span className="font-semibold text-teal-700">Word Document</span>
+                </button>
+              </div>
+              <div className="flex justify-end mt-4 mb-2">
+                <button
+                  className="px-5 py-2 rounded font-semibold border bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                  onClick={() => setShowExportFormatModal(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
