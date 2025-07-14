@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { FaDownload } from 'react-icons/fa';
 import { jsPDF } from 'jspdf';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
@@ -7,8 +8,21 @@ import { saveAs } from 'file-saver';
 
 const ComparisonScreen = () => {
   const location = useLocation();
-  const comparisonResult = location.state?.comparisonResult;
-  const childFileName = location.state?.childFileName;
+  const navigate = useNavigate();
+  // Only show uploaded/processed child files (with a valid comparisonResult)
+  const allChildFiles = location.state?.childFiles || [
+    { name: 'USPI_sample.docx', type: 'USPI', comparisonResult: location.state?.comparisonResult },
+    { name: 'SwissPI_sample.docx', type: 'SwissPI', comparisonResult: null },
+    { name: 'SmPC_sample.docx', type: 'SmPC', comparisonResult: null },
+    { name: 'AUSPI_sample.docx', type: 'AUSPI', comparisonResult: null },
+    { name: 'IPL_sample.docx', type: 'IPL', comparisonResult: null },
+    { name: 'JPI_sample.docx', type: 'JPI', comparisonResult: null },
+  ];
+  const uploadedChildFiles = allChildFiles.filter(f => f.comparisonResult);
+  const [selectedChildIdx, setSelectedChildIdx] = useState(0);
+  const selectedChild = uploadedChildFiles[selectedChildIdx] || uploadedChildFiles[0];
+  const comparisonResult = selectedChild?.comparisonResult || location.state?.comparisonResult;
+  const childFileName = selectedChild?.name;
 
   // Extract type from child file name (robust)
   const getChildType = (filename) => {
@@ -28,10 +42,22 @@ const ComparisonScreen = () => {
   const [activeTab, setActiveTab] = useState('section');
   const [showExportModal, setShowExportModal] = useState(false);
   const [showExportFormatModal, setShowExportFormatModal] = useState(false); // NEW
-  const [exportOptions, setExportOptions] = useState({
-    updatedDocuments: false,
-    overallSummary: true,
-    sectionWise: false,
+  // Replace exportOptions state with a single exportOption
+  const [exportOption, setExportOption] = useState('overallSummary');
+  const [selectedSectionIdx, setSelectedSectionIdx] = useState(null);
+  const [selectedSectionTitle, setSelectedSectionTitle] = useState(null);
+  // Helper to normalize titles
+  const normalizeTitle = (title) => (title || '').trim().toLowerCase();
+  // Build maps for first occurrence of each section title in CDS and Child
+  const cdsTitleToIndex = {};
+  cdsSections.forEach((sec, idx) => {
+    const norm = normalizeTitle(sec.title);
+    if (norm && !(norm in cdsTitleToIndex)) cdsTitleToIndex[norm] = idx;
+  });
+  const childTitleToIndex = {};
+  childSections.forEach((sec, idx) => {
+    const norm = normalizeTitle(sec.title);
+    if (norm && !(norm in childTitleToIndex)) childTitleToIndex[norm] = idx;
   });
 
   // Build maps for quick lookup
@@ -81,7 +107,7 @@ const ComparisonScreen = () => {
   // Helper to build export content based on options
   const buildExportContent = () => {
     let content = '';
-    if (exportOptions.updatedDocuments) {
+    if (exportOption === 'updatedDocuments') {
       content += '--- Updated Documents ---\n';
       cdsSections.forEach((sec, idx) => {
         content += `CDS Section ${idx + 1}: ${sec.title}\n${sec.content}\n\n`;
@@ -89,15 +115,13 @@ const ComparisonScreen = () => {
       childSections.forEach((sec, idx) => {
         content += `${childType} Section ${idx + 1}: ${sec.title}\n${sec.content}\n\n`;
       });
-    }
-    if (exportOptions.overallSummary) {
+    } else if (exportOption === 'overallSummary') {
       content += '\n--- Overall Summary ---\n';
       content += `Total Differences: ${totalDifferences}\nSections Affected: ${sectionsAffected}\n`;
       summaryOfChanges.forEach((summary, idx) => {
         content += `Change ${idx + 1}: ${summary}\n`;
       });
-    }
-    if (exportOptions.sectionWise) {
+    } else if (exportOption === 'sectionWise') {
       content += '\n--- Section-wise Differences ---\n';
       sectionComparisons.forEach((s, idx) => {
         if (s.change_count > 0) {
@@ -143,8 +167,31 @@ const ComparisonScreen = () => {
     });
   };
 
+  // Dropdown state
+  const [showDropdown, setShowDropdown] = useState(false);
+
   return (
     <div className="min-h-screen bg-teal-50 p-0">
+      {/* Back to Home Button */}
+      <div className="px-6 pt-4 pb-2 flex items-center">
+        <button
+          className="flex items-center text-teal-700 hover:underline text-base font-semibold gap-2"
+          onClick={() => navigate('/')}
+        >
+          <span className="text-xl">🏠</span> Back to Home
+        </button>
+      </div>
+      {/* Back to All Sections Button */}
+      {selectedSectionTitle && (
+        <div className="px-6 pt-4 pb-2 flex items-center">
+          <button
+            className="flex items-center text-teal-700 hover:underline text-base font-semibold gap-2"
+            onClick={() => setSelectedSectionTitle(null)}
+          >
+            <span className="text-xl">←</span> Back to All Sections
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="bg-teal-700 rounded-t-xl px-6 py-3 flex items-center gap-3">
         <img src="https://img.icons8.com/fluency/48/000000/document.png" alt="DocLens" className="h-8 w-8 mr-2" />
@@ -157,34 +204,77 @@ const ComparisonScreen = () => {
           <div className="grid grid-cols-2 gap-4 p-6">
             {/* Column Headers */}
             <div className="col-span-1 text-xl font-bold text-teal-700 mb-4">Core Data Sheet (CDS)</div>
-            <div className="col-span-1 text-xl font-bold text-teal-700 mb-4">USPI Document</div>
+            <div className="col-span-1 flex items-center gap-2 text-xl font-bold text-teal-700 mb-4">
+              <span>{selectedChild.type} Document</span>
+              <div className="relative">
+                <button
+                  className="flex items-center px-2 py-1 border border-gray-300 rounded bg-white hover:bg-gray-100 text-base font-semibold text-teal-700 gap-1"
+                  onClick={() => setShowDropdown(v => !v)}
+                  type="button"
+                >
+                  <span className="mr-1">▼</span>
+                  <span>{selectedChild.type}</span>
+                </button>
+                {showDropdown && (
+                  <div className="absolute z-10 mt-1 w-32 bg-white border border-gray-200 rounded shadow-lg">
+                    {uploadedChildFiles.map((file, idx) => (
+                      <div
+                        key={file.type}
+                        className={`px-4 py-2 cursor-pointer hover:bg-teal-50 ${selectedChildIdx === idx ? 'bg-teal-100 font-bold' : ''}`}
+                        onClick={() => { setSelectedChildIdx(idx); setShowDropdown(false); }}
+                      >
+                        {file.type}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
             {/* Section Rows */}
-            {rows.map((row, idx) => (
-              <React.Fragment key={idx}>
-                {/* CDS Card */}
-                <div>
-                  {row.cds ? (
-                    <div className="bg-white rounded-lg p-4 mb-4 shadow border">
-                      <div className="font-semibold text-teal-700 mb-2">{row.cds.title || `Section ${idx+1}`}</div>
-                      <div className="text-gray-700 text-sm whitespace-pre-line">{row.cds.content}</div>
-                    </div>
-                  ) : (
-                    <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-dashed border-gray-200 min-h-[80px]" />
-                  )}
-                </div>
-                {/* USPI Card */}
-                <div>
-                  {row.child ? (
-                    <div className="bg-white rounded-lg p-4 mb-4 shadow border">
-                      <div className="font-semibold text-teal-700 mb-2">{row.child.title || `Section ${idx+1}`}</div>
-                      <div className="text-gray-700 text-sm whitespace-pre-line">{row.child.content}</div>
-                    </div>
-                  ) : (
-                    <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-dashed border-gray-200 min-h-[80px]" />
-                  )}
-                </div>
-              </React.Fragment>
-            ))}
+            {rows.map((row, idx) => {
+              // Find the index of this section in its own array
+              const cdsIdx = row.cds ? cdsSections.findIndex(sec => normalizeTitle(sec.title) === normalizeTitle(row.cds.title)) : -1;
+              const childIdx = row.child ? childSections.findIndex(sec => normalizeTitle(sec.title) === normalizeTitle(row.child.title)) : -1;
+              // Find the first occurrence index for the selected title
+              const firstCdsIdx = selectedSectionTitle ? cdsSections.findIndex(sec => normalizeTitle(sec.title) === selectedSectionTitle) : -1;
+              const firstChildIdx = selectedSectionTitle ? childSections.findIndex(sec => normalizeTitle(sec.title) === selectedSectionTitle) : -1;
+              let cdsHighlighted = false;
+              let childHighlighted = false;
+              if (selectedSectionTitle) {
+                if (row.cds && normalizeTitle(row.cds.title) === selectedSectionTitle && cdsIdx === firstCdsIdx) {
+                  cdsHighlighted = true;
+                }
+                if (row.child && normalizeTitle(row.child.title) === selectedSectionTitle && childIdx === firstChildIdx) {
+                  childHighlighted = true;
+                }
+              }
+              return (
+                <React.Fragment key={idx}>
+                  {/* CDS Card */}
+                  <div>
+                    {row.cds ? (
+                      <div className={`bg-white rounded-lg p-4 mb-4 shadow border transition-all duration-150 ${cdsHighlighted ? 'ring-2 ring-teal-600 border-teal-600 bg-teal-50' : ''}`}>
+                        <div className="font-semibold text-teal-700 mb-2">{row.cds.title || `Section ${idx+1}`}</div>
+                        <div className="text-gray-700 text-sm whitespace-pre-line">{row.cds.content}</div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-dashed border-gray-200 min-h-[80px]" />
+                    )}
+                  </div>
+                  {/* USPI/Child Card */}
+                  <div>
+                    {row.child ? (
+                      <div className={`bg-white rounded-lg p-4 mb-4 shadow border transition-all duration-150 ${childHighlighted ? 'ring-2 ring-teal-600 border-teal-600 bg-teal-50' : ''}`}>
+                        <div className="font-semibold text-teal-700 mb-2">{row.child.title || `Section ${idx+1}`}</div>
+                        <div className="text-gray-700 text-sm whitespace-pre-line">{row.child.content}</div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-dashed border-gray-200 min-h-[80px]" />
+                    )}
+                  </div>
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
         {/* Right: AI Summary Panel */}
@@ -234,6 +324,21 @@ const ComparisonScreen = () => {
                       <span className="bg-red-100 text-red-700 rounded px-2 py-0.5 text-xs font-semibold">Missing in CDS</span>
                     </div>
                     <div className="text-gray-700 text-sm">{section.content}</div>
+                  </div>
+                ))}
+                {/* Section Differences List (clickable/highlightable) */}
+                {sectionComparisons.filter(s => s.change_count > 0).map((s, idx) => (
+                  <div
+                    key={`section-diff-${idx}`}
+                    className={`bg-white rounded-lg p-3 shadow border flex flex-col gap-1 mb-2 cursor-pointer transition-all duration-150 ${selectedSectionTitle === normalizeTitle(s.title) ? 'ring-2 ring-teal-600 border-teal-600 bg-teal-50' : ''}`}
+                    onClick={() => setSelectedSectionTitle(normalizeTitle(s.title))}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-teal-600 inline-block" />
+                      <span className="font-semibold text-teal-700">{s.title || `Section ${idx + 1}`}</span>
+                      <span className="ml-auto text-xs text-gray-500">{s.change_count} change{s.change_count > 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="text-gray-700 text-sm">{s.summary}</div>
                   </div>
                 ))}
               </div>
@@ -289,10 +394,12 @@ const ComparisonScreen = () => {
               <div className="flex flex-col gap-4 mb-6">
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
-                    type="checkbox"
-                    checked={exportOptions.updatedDocuments}
-                    onChange={e => setExportOptions(opts => ({ ...opts, updatedDocuments: e.target.checked }))}
-                    className="form-checkbox h-5 w-5 text-teal-600 rounded-none mt-1 border-gray-300 focus:ring-2 focus:ring-teal-500"
+                    type="radio"
+                    name="exportOption"
+                    value="updatedDocuments"
+                    checked={exportOption === 'updatedDocuments'}
+                    onChange={() => setExportOption('updatedDocuments')}
+                    className="form-radio h-5 w-5 text-teal-600 mt-1 border-gray-300 focus:ring-2 focus:ring-teal-500"
                   />
                   <div>
                     <span className="font-semibold text-gray-900">Updated Documents</span>
@@ -301,10 +408,12 @@ const ComparisonScreen = () => {
                 </label>
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
-                    type="checkbox"
-                    checked={exportOptions.overallSummary}
-                    onChange={e => setExportOptions(opts => ({ ...opts, overallSummary: e.target.checked }))}
-                    className="form-checkbox h-5 w-5 text-teal-600 rounded-none mt-1 border-gray-300 focus:ring-2 focus:ring-teal-500"
+                    type="radio"
+                    name="exportOption"
+                    value="overallSummary"
+                    checked={exportOption === 'overallSummary'}
+                    onChange={() => setExportOption('overallSummary')}
+                    className="form-radio h-5 w-5 text-teal-600 mt-1 border-gray-300 focus:ring-2 focus:ring-teal-500"
                   />
                   <div>
                     <span className="font-semibold text-gray-900">Overall Summary</span>
@@ -313,10 +422,12 @@ const ComparisonScreen = () => {
                 </label>
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
-                    type="checkbox"
-                    checked={exportOptions.sectionWise}
-                    onChange={e => setExportOptions(opts => ({ ...opts, sectionWise: e.target.checked }))}
-                    className="form-checkbox h-5 w-5 text-teal-600 rounded-none mt-1 border-gray-300 focus:ring-2 focus:ring-teal-500"
+                    type="radio"
+                    name="exportOption"
+                    value="sectionWise"
+                    checked={exportOption === 'sectionWise'}
+                    onChange={() => setExportOption('sectionWise')}
+                    className="form-radio h-5 w-5 text-teal-600 mt-1 border-gray-300 focus:ring-2 focus:ring-teal-500"
                   />
                   <div>
                     <span className="font-semibold text-gray-900">Section-wise Differences</span>
