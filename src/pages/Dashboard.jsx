@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
   const [sourceFile, setSourceFile] = useState(null);
-  const [childFile, setChildFile] = useState(null);
+  const [childFiles, setChildFiles] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -21,9 +21,16 @@ export default function Dashboard() {
   const childInputRef = useRef();
 
   const handleFileSelect = (e, type) => {
-    const file = e.target.files[0];
-    if (type === 'source') setSourceFile(file);
-    else setChildFile(file);
+    const files = Array.from(e.target.files);
+    if (type === 'source') {
+      setSourceFile(files[0]);
+    } else {
+      setChildFiles(prev => {
+        // Combine previous and new, but limit to 6
+        const combined = [...prev, ...files].slice(0, 6);
+        return combined;
+      });
+    }
   };
 
   const handleBoxClick = (type) => {
@@ -34,7 +41,7 @@ export default function Dashboard() {
   const beginAnalysis = async () => {
     setError('');
     setResult(null);
-    if (!sourceFile || !childFile) {
+    if (!sourceFile || childFiles.length === 0) {
       setError('Please upload both files.');
       return;
     }
@@ -42,11 +49,11 @@ export default function Dashboard() {
     try {
       const formData = new FormData();
       formData.append('source', sourceFile);
-      formData.append('child', childFile);
+      childFiles.forEach((file) => {
+        formData.append('child', file); // or use unique keys if backend expects
+      });
 
-      // const response = await fetch('https://doclens.gentlecoast-1594acf8.centralus.azurecontainerapps.io/', {
       const response = await fetch('http://localhost:8000/compare', {
-
         method: 'POST',
         body: formData,
       });
@@ -62,7 +69,19 @@ export default function Dashboard() {
 
       const data = await response.json();
       setShowUploadModal(false);
-      navigate('/comparison', { state: { comparisonResult: data, childFileName: childFile.name } });
+      // Build array of child file objects with name, type, and comparisonResult
+      const getChildType = (filename) => {
+        const types = ['USPI', 'SmPC', 'SwissPI', 'JPI', 'AUSPI', 'IPL'];
+        const lower = filename.toLowerCase();
+        const found = types.find(type => lower.includes(type.toLowerCase()));
+        return found || 'Child';
+      };
+      const childFilesData = childFiles.map((file, idx) => ({
+        name: file.name,
+        type: getChildType(file.name),
+        comparisonResult: Array.isArray(data) ? data[idx] : data // fallback for single result
+      }));
+      navigate('/comparison', { state: { childFiles: childFilesData } });
     } catch (err) {
       setError('Failed to analyze documents: ' + err.message);
       // Do NOT call navigate here
@@ -125,7 +144,7 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl shadow p-6 text-center border border-gray-100">
           <div className="text-3xl mb-3">📊</div>
           <h3 className="text-lg font-semibold text-teal-700 mb-2">Detailed Reports</h3>
-          <p className="text-gray-600 text-sm">Export detailed comparison reports in multiple formats (PDF, Word, HTML).</p>
+          <p className="text-gray-600 text-sm">Export detailed comparison reports in multiple formats (PDF, Word ).</p>
         </div>
       </section>
 
@@ -191,17 +210,25 @@ export default function Dashboard() {
                   accept=".pdf,.docx"
                   ref={childInputRef}
                   className="hidden"
+                  multiple
                   onChange={e => handleFileSelect(e, 'child')}
                 />
-                {childFile && (
-                  <div className="mt-3 text-xs text-green-700 font-semibold">{childFile.name}</div>
+                {childFiles.length > 0 && (
+                  <div className="mt-3 text-xs text-green-700 font-semibold">
+                    {childFiles.map((file, idx) => (
+                      <div key={idx}>{file.name}</div>
+                    ))}
+                  </div>
+                )}
+                {childFiles.length >= 6 && (
+                  <div className="mt-2 text-xs text-red-600 font-semibold">Maximum 6 files allowed.</div>
                 )}
               </div>
             </div>
             <button
               onClick={beginAnalysis}
-              disabled={loading || !sourceFile || !childFile}
-              className={`w-full py-3 rounded font-semibold text-lg transition ${loading || !sourceFile || !childFile ? 'bg-blue-300 text-white cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+              disabled={loading || !sourceFile || childFiles.length === 0}
+              className={`w-full py-3 rounded font-semibold text-lg transition ${loading || !sourceFile || childFiles.length === 0 ? 'bg-blue-300 text-white cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
             >
               {loading ? 'Analyzing...' : 'Begin Analysis'}
             </button>

@@ -104,6 +104,21 @@ const ComparisonScreen = () => {
     .filter(s => s.change_count > 0 && s.summary)
     .map(s => s.summary);
 
+  // Calculate missing sections
+  const unmatchedCdsSections = cdsSections.filter(sec => !matchedPairs.some(pair => pair.cds_title === sec.title));
+  const unmatchedChildSections = childSections.filter(sec => !matchedPairs.some(pair => pair.child_title === sec.title && pair.cds_title));
+  const missingSectionsCount = unmatchedCdsSections.length + unmatchedChildSections.length;
+
+  // Calculate changed sections
+  const changedSections = sectionComparisons.filter(s => s.change_count > 0);
+  const sectionsAffectedOverall = changedSections.length + missingSectionsCount;
+  const totalDifferencesOverall = changedSections.reduce((sum, s) => sum + (s.change_count || 0), 0) + missingSectionsCount;
+  const summaryOfChangesOverall = [
+    ...changedSections.filter(s => s.summary).map(s => s.summary),
+    ...unmatchedCdsSections.map(s => `Missing in ${childType}: ${s.title}`),
+    ...unmatchedChildSections.map(s => `Missing in CDS: ${s.title}`)
+  ];
+
   // Helper to build export content based on options
   const buildExportContent = () => {
     let content = '';
@@ -116,10 +131,25 @@ const ComparisonScreen = () => {
         content += `${childType} Section ${idx + 1}: ${sec.title}\n${sec.content}\n\n`;
       });
     } else if (exportOption === 'overallSummary') {
-      content += '\n--- Overall Summary ---\n';
-      content += `Total Differences: ${totalDifferences}\nSections Affected: ${sectionsAffected}\n`;
-      summaryOfChanges.forEach((summary, idx) => {
-        content += `Change ${idx + 1}: ${summary}\n`;
+      content += '--- Overall Summary ---\n';
+      content += `Total Differences: ${totalDifferencesOverall}\nSections Affected: ${sectionsAffectedOverall}\n\n`;
+      // Changed sections
+      changedSections.forEach((s, idx) => {
+        const cdsSection = cdsSections.find(sec => normalizeTitle(sec.title) === normalizeTitle(s.title));
+        const childSection = childSections.find(sec => normalizeTitle(sec.title) === normalizeTitle(s.title));
+        content += `Section: ${s.title}\nSummary: ${s.summary}\n`;
+        content += `CDS Content:\n${cdsSection?.content || 'No content'}\n`;
+        content += `${childType} Content:\n${childSection?.content || 'No content'}\n\n`;
+      });
+      // Missing CDS sections
+      unmatchedCdsSections.forEach(section => {
+        content += `Section: ${section.title}\nMissing in ${childType}\n`;
+        content += `CDS Content:\n${section.content || 'No content'}\n\n`;
+      });
+      // Missing Child sections
+      unmatchedChildSections.forEach(section => {
+        content += `Section: ${section.title}\nMissing in CDS\n`;
+        content += `${childType} Content:\n${section.content || 'No content'}\n\n`;
       });
     } else if (exportOption === 'sectionWise') {
       content += '\n--- Section-wise Differences ---\n';
@@ -198,87 +228,89 @@ const ComparisonScreen = () => {
         <span className="text-white text-2xl font-bold">DocLens</span>
       </div>
       {/* Main Content */}
-      <div className="max-w-[1600px] mx-auto bg-white rounded-b-xl shadow-lg flex flex-row mt-0">
+      <div className="max-w-[1600px] mx-auto bg-white rounded-b-xl shadow-lg flex flex-row mt-0 overflow-hidden">
         {/* Left: CDS & USPI Columns */}
         <div className="flex-1">
-          <div className="grid grid-cols-2 gap-4 p-6">
-            {/* Column Headers */}
-            <div className="col-span-1 text-xl font-bold text-teal-700 mb-4">Core Data Sheet (CDS)</div>
-            <div className="col-span-1 flex items-center gap-2 text-xl font-bold text-teal-700 mb-4">
-              <span>{selectedChild.type} Document</span>
-              <div className="relative">
-                <button
-                  className="flex items-center px-2 py-1 border border-gray-300 rounded bg-white hover:bg-gray-100 text-base font-semibold text-teal-700 gap-1"
-                  onClick={() => setShowDropdown(v => !v)}
-                  type="button"
-                >
-                  <span className="mr-1">▼</span>
-                  <span>{selectedChild.type}</span>
-                </button>
-                {showDropdown && (
-                  <div className="absolute z-10 mt-1 w-32 bg-white border border-gray-200 rounded shadow-lg">
-                    {uploadedChildFiles.map((file, idx) => (
-                      <div
-                        key={file.type}
-                        className={`px-4 py-2 cursor-pointer hover:bg-teal-50 ${selectedChildIdx === idx ? 'bg-teal-100 font-bold' : ''}`}
-                        onClick={() => { setSelectedChildIdx(idx); setShowDropdown(false); }}
-                      >
-                        {file.type}
-                      </div>
-                    ))}
-                  </div>
-                )}
+          <div className="h-[600px] overflow-y-auto">
+            <div className="grid grid-cols-2 gap-4 p-6">
+              {/* Column Headers */}
+              <div className="col-span-1 text-xl font-bold text-teal-700 mb-4">Core Data Sheet (CDS)</div>
+              <div className="col-span-1 flex items-center gap-2 text-xl font-bold text-teal-700 mb-4">
+                <span>{selectedChild.type} Document</span>
+                <div className="relative">
+                  <button
+                    className="flex items-center px-2 py-1 border border-gray-300 rounded bg-white hover:bg-gray-100 text-base font-semibold text-teal-700 gap-1"
+                    onClick={() => setShowDropdown(v => !v)}
+                    type="button"
+                  >
+                    <span className="mr-1">▼</span>
+                    <span>{selectedChild.type}</span>
+                  </button>
+                  {showDropdown && (
+                    <div className="absolute z-10 mt-1 w-32 bg-white border border-gray-200 rounded shadow-lg">
+                      {uploadedChildFiles.map((file, idx) => (
+                        <div
+                          key={file.type}
+                          className={`px-4 py-2 cursor-pointer hover:bg-teal-50 ${selectedChildIdx === idx ? 'bg-teal-100 font-bold' : ''}`}
+                          onClick={() => { setSelectedChildIdx(idx); setShowDropdown(false); }}
+                        >
+                          {file.type}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
+              {/* Section Rows */}
+              {rows.map((row, idx) => {
+                // Find the index of this section in its own array
+                const cdsIdx = row.cds ? cdsSections.findIndex(sec => normalizeTitle(sec.title) === normalizeTitle(row.cds.title)) : -1;
+                const childIdx = row.child ? childSections.findIndex(sec => normalizeTitle(sec.title) === normalizeTitle(row.child.title)) : -1;
+                // Find the first occurrence index for the selected title
+                const firstCdsIdx = selectedSectionTitle ? cdsSections.findIndex(sec => normalizeTitle(sec.title) === selectedSectionTitle) : -1;
+                const firstChildIdx = selectedSectionTitle ? childSections.findIndex(sec => normalizeTitle(sec.title) === selectedSectionTitle) : -1;
+                let cdsHighlighted = false;
+                let childHighlighted = false;
+                if (selectedSectionTitle) {
+                  if (row.cds && normalizeTitle(row.cds.title) === selectedSectionTitle && cdsIdx === firstCdsIdx) {
+                    cdsHighlighted = true;
+                  }
+                  if (row.child && normalizeTitle(row.child.title) === selectedSectionTitle && childIdx === firstChildIdx) {
+                    childHighlighted = true;
+                  }
+                }
+                return (
+                  <React.Fragment key={idx}>
+                    {/* CDS Card */}
+                    <div>
+                      {row.cds ? (
+                        <div className={`bg-white rounded-lg p-4 mb-4 shadow border transition-all duration-150 ${cdsHighlighted ? 'ring-2 ring-teal-600 border-teal-600 bg-teal-50' : ''}`}>
+                          <div className="font-semibold text-teal-700 mb-2">{row.cds.title || `Section ${idx+1}`}</div>
+                          <div className="text-gray-700 text-sm whitespace-pre-line">{row.cds.content}</div>
+                        </div>
+                      ) : (
+                        <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-dashed border-gray-200 min-h-[80px]" />
+                      )}
+                    </div>
+                    {/* USPI/Child Card */}
+                    <div>
+                      {row.child ? (
+                        <div className={`bg-white rounded-lg p-4 mb-4 shadow border transition-all duration-150 ${childHighlighted ? 'ring-2 ring-teal-600 border-teal-600 bg-teal-50' : ''}`}>
+                          <div className="font-semibold text-teal-700 mb-2">{row.child.title || `Section ${idx+1}`}</div>
+                          <div className="text-gray-700 text-sm whitespace-pre-line">{row.child.content}</div>
+                        </div>
+                      ) : (
+                        <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-dashed border-gray-200 min-h-[80px]" />
+                      )}
+                    </div>
+                  </React.Fragment>
+                );
+              })}
             </div>
-            {/* Section Rows */}
-            {rows.map((row, idx) => {
-              // Find the index of this section in its own array
-              const cdsIdx = row.cds ? cdsSections.findIndex(sec => normalizeTitle(sec.title) === normalizeTitle(row.cds.title)) : -1;
-              const childIdx = row.child ? childSections.findIndex(sec => normalizeTitle(sec.title) === normalizeTitle(row.child.title)) : -1;
-              // Find the first occurrence index for the selected title
-              const firstCdsIdx = selectedSectionTitle ? cdsSections.findIndex(sec => normalizeTitle(sec.title) === selectedSectionTitle) : -1;
-              const firstChildIdx = selectedSectionTitle ? childSections.findIndex(sec => normalizeTitle(sec.title) === selectedSectionTitle) : -1;
-              let cdsHighlighted = false;
-              let childHighlighted = false;
-              if (selectedSectionTitle) {
-                if (row.cds && normalizeTitle(row.cds.title) === selectedSectionTitle && cdsIdx === firstCdsIdx) {
-                  cdsHighlighted = true;
-                }
-                if (row.child && normalizeTitle(row.child.title) === selectedSectionTitle && childIdx === firstChildIdx) {
-                  childHighlighted = true;
-                }
-              }
-              return (
-                <React.Fragment key={idx}>
-                  {/* CDS Card */}
-                  <div>
-                    {row.cds ? (
-                      <div className={`bg-white rounded-lg p-4 mb-4 shadow border transition-all duration-150 ${cdsHighlighted ? 'ring-2 ring-teal-600 border-teal-600 bg-teal-50' : ''}`}>
-                        <div className="font-semibold text-teal-700 mb-2">{row.cds.title || `Section ${idx+1}`}</div>
-                        <div className="text-gray-700 text-sm whitespace-pre-line">{row.cds.content}</div>
-                      </div>
-                    ) : (
-                      <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-dashed border-gray-200 min-h-[80px]" />
-                    )}
-                  </div>
-                  {/* USPI/Child Card */}
-                  <div>
-                    {row.child ? (
-                      <div className={`bg-white rounded-lg p-4 mb-4 shadow border transition-all duration-150 ${childHighlighted ? 'ring-2 ring-teal-600 border-teal-600 bg-teal-50' : ''}`}>
-                        <div className="font-semibold text-teal-700 mb-2">{row.child.title || `Section ${idx+1}`}</div>
-                        <div className="text-gray-700 text-sm whitespace-pre-line">{row.child.content}</div>
-                      </div>
-                    ) : (
-                      <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-dashed border-gray-200 min-h-[80px]" />
-                    )}
-                  </div>
-                </React.Fragment>
-              );
-            })}
           </div>
         </div>
         {/* Right: AI Summary Panel */}
-        <div className="w-[400px] border-l bg-teal-50 p-6 flex flex-col">
+        <div className="w-[400px] border-l bg-teal-50 p-6 flex flex-col h-[600px] overflow-y-auto">
           <h2 className="text-lg font-bold text-teal-700 mb-4">AI Summary</h2>
           {/* Tabs */}
           <div className="flex gap-2 mb-4">
@@ -320,7 +352,7 @@ const ComparisonScreen = () => {
                 {childSections.filter(sec => !matchedPairs.some(pair => pair.child_title === sec.title && pair.cds_title)).map((section, idx) => (
                   <div key={`uspi-missing-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-teal-700 text-sm">{section.title || `USPI Section`}</span>
+                      <span className="font-semibold text-teal-700 text-sm">{section.title || `${childType} Section`}</span>
                       <span className="bg-red-100 text-red-700 rounded px-2 py-0.5 text-xs font-semibold">Missing in CDS</span>
                     </div>
                     <div className="text-gray-700 text-sm">{section.content}</div>
@@ -341,6 +373,49 @@ const ComparisonScreen = () => {
                     <div className="text-gray-700 text-sm">{s.summary}</div>
                   </div>
                 ))}
+                {/* Section Diff Viewer */}
+                {selectedSectionTitle && (() => {
+                  const selectedSection = sectionComparisons.find(
+                    s => normalizeTitle(s.title) === selectedSectionTitle
+                  );
+                  return selectedSection && selectedSection.diff ? (
+                    <div className="mt-4">
+                      <h4 className="text-md font-semibold text-teal-700 mb-2">
+                        Detailed Changes for: {selectedSection.title}
+                      </h4>
+                      <div
+                        className="overflow-auto bg-white border rounded p-2 mb-4"
+                        style={{ maxHeight: 350 }}
+                        dangerouslySetInnerHTML={{ __html: selectedSection.diff }}
+                      />
+                      {/* Missing Content Lists */}
+                      {(selectedSection.missing_in_child?.length > 0 || selectedSection.missing_in_cds?.length > 0) && (
+                        <div className="flex flex-col gap-2 mt-2">
+                          {selectedSection.missing_in_child?.length > 0 && (
+                            <div>
+                              <div className="font-semibold text-red-700 mb-1">Present in CDS, missing in {childType}:</div>
+                              <ul className="list-disc list-inside text-xs text-gray-700">
+                                {selectedSection.missing_in_child.map((item, i) => (
+                                  <li key={`missing-in-child-${i}`}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {selectedSection.missing_in_cds?.length > 0 && (
+                            <div>
+                              <div className="font-semibold text-red-700 mb-1">Present in {childType}, missing in CDS:</div>
+                              <ul className="list-disc list-inside text-xs text-gray-700">
+                                {selectedSection.missing_in_cds.map((item, i) => (
+                                  <li key={`missing-in-cds-${i}`}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
               </div>
             </div>
           )}
@@ -350,25 +425,56 @@ const ComparisonScreen = () => {
               <h3 className="text-md font-semibold text-teal-700 mb-2">Document Analysis Summary</h3>
               <div className="flex gap-4 mb-4">
                 <div className="bg-white rounded-lg shadow border p-4 flex flex-col items-center min-w-[120px]">
-                  <span className="text-2xl font-bold text-teal-700">{totalDifferences}</span>
+                  <span className="text-2xl font-bold text-teal-700">{totalDifferencesOverall}</span>
                   <span className="text-gray-600 text-xs mt-1">Total Differences</span>
                 </div>
                 <div className="bg-white rounded-lg shadow border p-4 flex flex-col items-center min-w-[120px]">
-                  <span className="text-2xl font-bold text-teal-700">{sectionsAffected}</span>
+                  <span className="text-2xl font-bold text-teal-700">{sectionsAffectedOverall}</span>
                   <span className="text-gray-600 text-xs mt-1">Sections Affected</span>
                 </div>
               </div>
-              <h4 className="text-md font-semibold text-teal-700 mb-2">Summary of Changes</h4>
+              <h4 className="text-md font-semibold text-teal-700 mb-2">Summary of Changes & Missing Sections</h4>
               <div className="flex flex-col gap-3">
-                {summaryOfChanges.length === 0 ? (
-                  <div className="text-gray-400 italic">No significant changes found.</div>
+                {sectionsAffectedOverall === 0 ? (
+                  <div className="text-gray-400 italic">No significant changes or missing sections found.</div>
                 ) : (
-                  summaryOfChanges.map((change, idx) => (
-                    <div key={idx} className="bg-white rounded-lg p-3 shadow border flex flex-row items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-teal-600 inline-block" />
-                      <span className="text-gray-700 text-sm">{change}</span>
-                    </div>
-                  ))
+                  <>
+                    {/* Changed Sections */}
+                    {changedSections.map((s, idx) => (
+                      <div key={`changed-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col gap-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="h-2 w-2 rounded-full bg-teal-600 inline-block" />
+                          <span className="font-semibold text-teal-700">{s.title}</span>
+                          <span className="ml-auto text-xs text-gray-500">{s.change_count} change{s.change_count > 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="text-gray-700 text-sm mb-2">{s.summary}</div>
+                      </div>
+                    ))}
+                    {/* Missing CDS Sections */}
+                    {unmatchedCdsSections.map((section, idx) => (
+                      <div key={`missing-cds-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col gap-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="h-2 w-2 rounded-full bg-red-600 inline-block" />
+                          <span className="font-semibold text-teal-700">{section.title}</span>
+                          <span className="ml-auto text-xs text-red-500">Missing in {childType}</span>
+                        </div>
+                        <div className="font-semibold text-teal-700 mb-1">CDS</div>
+                        <div className="text-gray-700 text-xs whitespace-pre-line bg-gray-50 rounded p-2 min-h-[40px]">{section.content || <span className='italic text-gray-400'>No content</span>}</div>
+                      </div>
+                    ))}
+                    {/* Missing Child Sections */}
+                    {unmatchedChildSections.map((section, idx) => (
+                      <div key={`missing-child-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col gap-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="h-2 w-2 rounded-full bg-red-600 inline-block" />
+                          <span className="font-semibold text-teal-700">{section.title}</span>
+                          <span className="ml-auto text-xs text-red-500">Missing in CDS</span>
+                        </div>
+                        <div className="font-semibold text-teal-700 mb-1">{childType}</div>
+                        <div className="text-gray-700 text-xs whitespace-pre-line bg-gray-50 rounded p-2 min-h-[40px]">{section.content || <span className='italic text-gray-400'>No content</span>}</div>
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
             </div>
