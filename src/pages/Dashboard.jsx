@@ -53,7 +53,8 @@ export default function Dashboard() {
         formData.append('child', file); // or use unique keys if backend expects
       });
 
-      const response = await fetch('http://localhost:8000/compare', {
+      // const response = await fetch('http://localhost:8000/compare', {
+        const response = await fetch('https://doclens.gentlecoast-1594acf8.centralus.azurecontainerapps.io', {
         method: 'POST',
         body: formData,
       });
