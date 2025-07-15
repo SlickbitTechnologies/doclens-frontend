@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { auth } from '../firebase';
 
 export default function Dashboard() {
   const [sourceFile, setSourceFile] = useState(null);
@@ -53,8 +54,7 @@ export default function Dashboard() {
         formData.append('child', file); // or use unique keys if backend expects
       });
 
-      // const response = await fetch('http://localhost:8000/compare', {
-        const response = await fetch('https://doclens.gentlecoast-1594acf8.centralus.azurecontainerapps.io', {
+      const response = await fetch('https://doclens.gentlecoast-1594acf8.centralus.azurecontainerapps.io', {
         method: 'POST',
         body: formData,
       });
@@ -100,7 +100,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center space-x-4">
           <span className="text-gray-700 flex items-center">
-            <span className="mr-2">👤</span>subbarao.qa7
+            <span className="mr-2">👤</span>{auth.currentUser?.email ? auth.currentUser.email.split('@')[0] : 'Guest'}
           </span>
           <button
             className="border border-teal-600 text-teal-700 px-4 py-1 rounded hover:bg-teal-50 font-semibold"
@@ -226,14 +226,27 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-            <button
-              onClick={beginAnalysis}
-              disabled={loading || !sourceFile || childFiles.length === 0}
-              className={`w-full py-3 rounded font-semibold text-lg transition ${loading || !sourceFile || childFiles.length === 0 ? 'bg-blue-300 text-white cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-            >
-              {loading ? 'Analyzing...' : 'Begin Analysis'}
-            </button>
+            {/* Analyze Button */}
+            {!loading && (
+              <button
+                onClick={beginAnalysis}
+                disabled={!sourceFile || childFiles.length === 0}
+                className={`w-full py-3 rounded font-semibold text-lg transition ${!sourceFile || childFiles.length === 0 ? 'bg-blue-300 text-white cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+              >
+                Begin Analysis
+              </button>
+            )}
             {error && <div className="text-red-500 mt-4 text-center">{error}</div>}
+            {/* Loader Overlay */}
+            {loading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-white bg-opacity-80 z-50 rounded-xl">
+                <svg className="animate-spin h-12 w-12 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                </svg>
+                <div className="text-blue-700 font-semibold text-lg">Analyzing...</div>
+              </div>
+            )}
           </div>
         </div>
       )}

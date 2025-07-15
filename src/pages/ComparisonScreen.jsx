@@ -33,8 +33,6 @@ const ComparisonScreen = () => {
     return found || 'Child';
   };
   const childType = getChildType(childFileName);
-  // Debug: log the file name and detected type
-  console.log('Child file name:', childFileName, 'Detected type:', childType);
   const matchedPairs = comparisonResult?.matched_pairs || [];
   const cdsSections = comparisonResult?.cds_sections || [];
   const childSections = comparisonResult?.child_sections || [];
@@ -70,24 +68,48 @@ const ComparisonScreen = () => {
   const matchedChildTitles = new Set(matchedPairs.map(pair => pair.child_title));
 
   // Build rows: for each CDS section, show its match if any, else blank; then add unmatched USPI sections
-  const rows = [];
-  cdsSections.forEach((cdsSec, idx) => {
-    const matchedChildTitle = matchedByCdsTitle[cdsSec.title];
-    const childSec = matchedChildTitle ? childSectionMap[matchedChildTitle] : null;
-    rows.push({
-      cds: cdsSec,
-      child: childSec || null
-    });
-  });
-  // Add unmatched USPI sections
-  childSections.forEach((childSec) => {
-    if (!matchedByChildTitle[childSec.title]) {
-      rows.push({
-        cds: null,
-        child: childSec
-      });
+  let rows = [];
+  if (selectedSectionTitle) {
+    // Only show the matching pair for the selected differentiate section
+    const s = sectionComparisons.find(sc => normalizeTitle(sc.title) === selectedSectionTitle);
+    if (s) {
+      // Find the matching pair in matchedPairs
+      const pair = matchedPairs.find(
+        p => normalizeTitle(p.cds_title) === selectedSectionTitle || normalizeTitle(p.child_title) === selectedSectionTitle
+      );
+      if (pair) {
+        rows = [{
+          cds: pair.cds_title ? { title: pair.cds_title, content: pair.cds_content } : null,
+          child: pair.child_title ? { title: pair.child_title, content: pair.child_content } : null
+        }];
+      } else {
+        // If no pair, show as unmatched (shouldn't happen for differentiate sections)
+        rows = [{
+          cds: cdsSections.find(sec => normalizeTitle(sec.title) === selectedSectionTitle) || null,
+          child: childSections.find(sec => normalizeTitle(sec.title) === selectedSectionTitle) || null
+        }];
+      }
     }
-  });
+  } else {
+    // Default: show all rows as before
+    cdsSections.forEach((cdsSec, idx) => {
+      const matchedChildTitle = matchedByCdsTitle[cdsSec.title];
+      const childSec = matchedChildTitle ? childSectionMap[matchedChildTitle] : null;
+      rows.push({
+        cds: cdsSec,
+        child: childSec || null
+      });
+    });
+    // Add unmatched USPI sections
+    childSections.forEach((childSec) => {
+      if (!matchedByChildTitle[childSec.title]) {
+        rows.push({
+          cds: null,
+          child: childSec
+        });
+      }
+    });
+  }
 
   if (!comparisonResult || (cdsSections.length === 0 && childSections.length === 0)) {
     return (
@@ -131,33 +153,27 @@ const ComparisonScreen = () => {
         content += `${childType} Section ${idx + 1}: ${sec.title}\n${sec.content}\n\n`;
       });
     } else if (exportOption === 'overallSummary') {
+      // Export only what is shown in the Overall tab: summary boxes and summary of changes
       content += '--- Overall Summary ---\n';
       content += `Total Differences: ${totalDifferencesOverall}\nSections Affected: ${sectionsAffectedOverall}\n\n`;
-      // Changed sections
-      changedSections.forEach((s, idx) => {
-        const cdsSection = cdsSections.find(sec => normalizeTitle(sec.title) === normalizeTitle(s.title));
-        const childSection = childSections.find(sec => normalizeTitle(sec.title) === normalizeTitle(s.title));
-        content += `Section: ${s.title}\nSummary: ${s.summary}\n`;
-        content += `CDS Content:\n${cdsSection?.content || 'No content'}\n`;
-        content += `${childType} Content:\n${childSection?.content || 'No content'}\n\n`;
-      });
-      // Missing CDS sections
-      unmatchedCdsSections.forEach(section => {
-        content += `Section: ${section.title}\nMissing in ${childType}\n`;
-        content += `CDS Content:\n${section.content || 'No content'}\n\n`;
-      });
-      // Missing Child sections
-      unmatchedChildSections.forEach(section => {
-        content += `Section: ${section.title}\nMissing in CDS\n`;
-        content += `${childType} Content:\n${section.content || 'No content'}\n\n`;
+      content += 'Summary of Changes:\n';
+      sectionComparisons.filter(s => s.change_count > 0 && s.summary).forEach((s, idx) => {
+        content += `- ${s.summary}\n`;
       });
     } else if (exportOption === 'sectionWise') {
+      // Export only what is shown in the Section-Wise tab: difference list and missing sections
       content += '\n--- Section-wise Differences ---\n';
-      sectionComparisons.forEach((s, idx) => {
-        if (s.change_count > 0) {
-          const sectionName = s.section && s.section.trim() ? s.section : `Section ${idx + 1}`;
-          content += `Section: ${sectionName}\nChanges: ${s.change_count}\nSummary: ${s.summary}\n\n`;
-        }
+      // Differences
+      sectionComparisons.filter(s => s.change_count > 0 && s.summary).forEach((s, idx) => {
+        content += `Section: ${s.title}\nChanges: ${s.change_count}\nSummary: ${s.summary}\n\n`;
+      });
+      // Missing in Child
+      cdsSections.filter(sec => !matchedPairs.some(pair => pair.cds_title === sec.title && pair.child_title)).forEach(section => {
+        content += `Section: ${section.title}\nMissing in ${childType}\n${section.content}\n\n`;
+      });
+      // Missing in CDS
+      childSections.filter(sec => !matchedPairs.some(pair => pair.child_title === sec.title && pair.cds_title)).forEach(section => {
+        content += `Section: ${section.title}\nMissing in CDS\n${section.content}\n\n`;
       });
     }
     return content || 'No content selected for export.';
@@ -339,7 +355,7 @@ const ComparisonScreen = () => {
               <h3 className="text-md font-semibold text-teal-700 mb-2">Missing Sections</h3>
               <div className="flex flex-col gap-3">
                 {/* Unmatched CDS sections (missing in Child/USPI) */}
-                {cdsSections.filter(sec => !matchedPairs.some(pair => pair.cds_title === sec.title)).map((section, idx) => (
+                {cdsSections.filter(sec => !matchedPairs.some(pair => pair.cds_title === sec.title && pair.child_title)).map((section, idx) => (
                   <div key={`cds-missing-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-semibold text-teal-700 text-sm">{section.title || `CDS Section`}</span>
@@ -359,7 +375,12 @@ const ComparisonScreen = () => {
                   </div>
                 ))}
                 {/* Section Differences List (clickable/highlightable) */}
-                {sectionComparisons.filter(s => s.change_count > 0).map((s, idx) => (
+                {sectionComparisons.filter(s => {
+                  // Exclude if section is missing in CDS or missing in child
+                  const isMissingInCDS = childSections.some(sec => normalizeTitle(sec.title) === normalizeTitle(s.title)) && !matchedPairs.some(pair => pair.child_title === s.title && pair.cds_title);
+                  const isMissingInChild = cdsSections.some(sec => normalizeTitle(sec.title) === normalizeTitle(s.title)) && !matchedPairs.some(pair => pair.cds_title === s.title && pair.child_title);
+                  return s.change_count > 0 && !isMissingInCDS && !isMissingInChild;
+                }).map((s, idx) => (
                   <div
                     key={`section-diff-${idx}`}
                     className={`bg-white rounded-lg p-3 shadow border flex flex-col gap-1 mb-2 cursor-pointer transition-all duration-150 ${selectedSectionTitle === normalizeTitle(s.title) ? 'ring-2 ring-teal-600 border-teal-600 bg-teal-50' : ''}`}
@@ -368,7 +389,7 @@ const ComparisonScreen = () => {
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-teal-600 inline-block" />
                       <span className="font-semibold text-teal-700">{s.title || `Section ${idx + 1}`}</span>
-                      <span className="ml-auto text-xs text-gray-500">{s.change_count} change{s.change_count > 1 ? 's' : ''}</span>
+                      <span className="ml-auto text-xs text-red-600 font-bold">{s.change_count} change{s.change_count > 1 ? 's' : ''}</span>
                     </div>
                     <div className="text-gray-700 text-sm">{s.summary}</div>
                   </div>
@@ -433,50 +454,35 @@ const ComparisonScreen = () => {
                   <span className="text-gray-600 text-xs mt-1">Sections Affected</span>
                 </div>
               </div>
-              <h4 className="text-md font-semibold text-teal-700 mb-2">Summary of Changes & Missing Sections</h4>
+              <h4 className="text-md font-semibold text-teal-700 mb-2">Summary of Changes</h4>
               <div className="flex flex-col gap-3">
-                {sectionsAffectedOverall === 0 ? (
-                  <div className="text-gray-400 italic">No significant changes or missing sections found.</div>
-                ) : (
-                  <>
-                    {/* Changed Sections */}
-                    {changedSections.map((s, idx) => (
-                      <div key={`changed-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col gap-2">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="h-2 w-2 rounded-full bg-teal-600 inline-block" />
-                          <span className="font-semibold text-teal-700">{s.title}</span>
-                          <span className="ml-auto text-xs text-gray-500">{s.change_count} change{s.change_count > 1 ? 's' : ''}</span>
-                        </div>
-                        <div className="text-gray-700 text-sm mb-2">{s.summary}</div>
-                      </div>
-                    ))}
-                    {/* Missing CDS Sections */}
-                    {unmatchedCdsSections.map((section, idx) => (
-                      <div key={`missing-cds-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col gap-2">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="h-2 w-2 rounded-full bg-red-600 inline-block" />
-                          <span className="font-semibold text-teal-700">{section.title}</span>
-                          <span className="ml-auto text-xs text-red-500">Missing in {childType}</span>
-                        </div>
-                        <div className="font-semibold text-teal-700 mb-1">CDS</div>
-                        <div className="text-gray-700 text-xs whitespace-pre-line bg-gray-50 rounded p-2 min-h-[40px]">{section.content || <span className='italic text-gray-400'>No content</span>}</div>
-                      </div>
-                    ))}
-                    {/* Missing Child Sections */}
-                    {unmatchedChildSections.map((section, idx) => (
-                      <div key={`missing-child-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col gap-2">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="h-2 w-2 rounded-full bg-red-600 inline-block" />
-                          <span className="font-semibold text-teal-700">{section.title}</span>
-                          <span className="ml-auto text-xs text-red-500">Missing in CDS</span>
-                        </div>
-                        <div className="font-semibold text-teal-700 mb-1">{childType}</div>
-                        <div className="text-gray-700 text-xs whitespace-pre-line bg-gray-50 rounded p-2 min-h-[40px]">{section.content || <span className='italic text-gray-400'>No content</span>}</div>
-                      </div>
-                    ))}
-                  </>
-                )}
+                {sectionComparisons.filter(s => s.change_count > 0 && s.summary).map((s, idx) => (
+                  <div key={`overall-summary-${idx}`} className="bg-white rounded-lg p-3 shadow border flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-teal-600 inline-block" />
+                    <span className="text-gray-700 text-sm">{s.summary}</span>
+                  </div>
+                ))}
               </div>
+              {/* Missing in Child */}
+              {cdsSections.filter(sec => !matchedPairs.some(pair => pair.cds_title === sec.title && pair.child_title)).map((section, idx) => (
+                <div key={`overall-missing-child-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-teal-700 text-sm">{section.title || `CDS Section`}</span>
+                    <span className="bg-red-100 text-red-700 rounded px-2 py-0.5 text-xs font-semibold">{`Missing in ${childType}`}</span>
+                  </div>
+                  <div className="text-gray-700 text-sm">{section.content}</div>
+                </div>
+              ))}
+              {/* Missing in CDS */}
+              {childSections.filter(sec => !matchedPairs.some(pair => pair.child_title === sec.title && pair.cds_title)).map((section, idx) => (
+                <div key={`overall-missing-cds-${idx}`} className="bg-white rounded-lg p-3 shadow border flex flex-col">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-teal-700 text-sm">{section.title || `${childType} Section`}</span>
+                    <span className="bg-red-100 text-red-700 rounded px-2 py-0.5 text-xs font-semibold">Missing in CDS</span>
+                  </div>
+                  <div className="text-gray-700 text-sm">{section.content}</div>
+                </div>
+              ))}
             </div>
           )}
         </div>
